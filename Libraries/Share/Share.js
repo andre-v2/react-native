@@ -5,36 +5,26 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @format
- * @flow strict-local
+ * @flow
  */
 
 'use strict';
 
-const Platform = require('../Utilities/Platform');
+const Platform = require('Platform');
 
 const invariant = require('invariant');
-const processColor = require('../StyleSheet/processColor');
+const processColor = require('processColor');
 
-import NativeActionSheetManager from '../ActionSheetIOS/NativeActionSheetManager';
-import NativeShareModule from './NativeShareModule';
+const {ActionSheetManager, ShareModule} = require('NativeModules');
 
 type Content =
-  | {
-      title?: string,
-      message: string,
-      ...
-    }
-  | {
-      title?: string,
-      url: string,
-      ...
-    };
+  | {title?: string, message: string}
+  | {title?: string, url: string};
 type Options = {
   dialogTitle?: string,
   excludedActivityTypes?: Array<string>,
   tintColor?: string,
   subject?: string,
-  ...
 };
 
 class Share {
@@ -50,16 +40,13 @@ class Share {
    * ### Content
    *
    *  - `message` - a message to share
+   *  - `title` - title of the message
    *
    * #### iOS
    *
    *  - `url` - an URL to share
    *
    * At least one of URL and message is required.
-   *
-   * #### Android
-   *
-   * - `title` - title of the message
    *
    * ### Options
    *
@@ -74,10 +61,7 @@ class Share {
    *  - `dialogTitle`
    *
    */
-  static share(
-    content: Content,
-    options: Options = {},
-  ): Promise<{action: string, activityType: ?string}> {
+  static share(content: Content, options: Options = {}): Promise<Object> {
     invariant(
       typeof content === 'object' && content !== null,
       'Content to share must be a valid object',
@@ -93,49 +77,14 @@ class Share {
 
     if (Platform.OS === 'android') {
       invariant(
-        NativeShareModule,
-        'ShareModule should be registered on Android.',
-      );
-      invariant(
-        content.title == null || typeof content.title === 'string',
+        !content.title || typeof content.title === 'string',
         'Invalid title: title should be a string.',
       );
-
-      const newContent = {
-        title: content.title,
-        message:
-          typeof content.message === 'string' ? content.message : undefined,
-      };
-
-      return NativeShareModule.share(newContent, options.dialogTitle).then(
-        result => ({
-          activityType: null,
-          ...result,
-        }),
-      );
+      return ShareModule.share(content, options.dialogTitle);
     } else if (Platform.OS === 'ios') {
       return new Promise((resolve, reject) => {
-        const tintColor = processColor(options.tintColor);
-
-        invariant(
-          tintColor == null || typeof tintColor === 'number',
-          'Unexpected color given for options.tintColor',
-        );
-
-        invariant(
-          NativeActionSheetManager,
-          'NativeActionSheetManager is not registered on iOS, but it should be.',
-        );
-
-        NativeActionSheetManager.showShareActionSheetWithOptions(
-          {
-            message:
-              typeof content.message === 'string' ? content.message : undefined,
-            url: typeof content.url === 'string' ? content.url : undefined,
-            subject: options.subject,
-            tintColor: typeof tintColor === 'number' ? tintColor : undefined,
-            excludedActivityTypes: options.excludedActivityTypes,
-          },
+        ActionSheetManager.showShareActionSheetWithOptions(
+          {...content, ...options, tintColor: processColor(options.tintColor)},
           error => reject(error),
           (success, activityType) => {
             if (success) {
@@ -146,7 +95,6 @@ class Share {
             } else {
               resolve({
                 action: 'dismissedAction',
-                activityType: null,
               });
             }
           },
@@ -160,13 +108,17 @@ class Share {
   /**
    * The content was successfully shared.
    */
-  static sharedAction: 'sharedAction' = 'sharedAction';
+  static get sharedAction(): string {
+    return 'sharedAction';
+  }
 
   /**
    * The dialog has been dismissed.
    * @platform ios
    */
-  static dismissedAction: 'dismissedAction' = 'dismissedAction';
+  static get dismissedAction(): string {
+    return 'dismissedAction';
+  }
 }
 
 module.exports = Share;

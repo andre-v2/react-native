@@ -1,4 +1,4 @@
-/*
+/**
  * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * This source code is licensed under the MIT license found in the
@@ -7,10 +7,13 @@
 
 package com.facebook.react.bridge;
 
-import androidx.annotation.Nullable;
+import javax.annotation.Nullable;
+
 import androidx.core.util.Pools;
 
-/** Implementation of Dynamic wrapping a ReadableArray. */
+/**
+ * Implementation of Dynamic wrapping a ReadableArray.
+ */
 public class DynamicFromArray implements Dynamic {
   private static final Pools.SimplePool<DynamicFromArray> sPool = new Pools.SimplePool<>(10);
 

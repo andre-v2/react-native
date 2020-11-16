@@ -4,26 +4,24 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @flow strict
+ * @flow
  * @format
  */
 
 'use strict';
 
-const ErrorUtils = require('../vendor/core/ErrorUtils');
-const Systrace = require('../Performance/Systrace');
+const ErrorUtils = require('ErrorUtils');
+const Systrace = require('Systrace');
 
-const deepFreezeAndThrowOnMutationInDev = require('../Utilities/deepFreezeAndThrowOnMutationInDev');
+const deepFreezeAndThrowOnMutationInDev = require('deepFreezeAndThrowOnMutationInDev');
 const invariant = require('invariant');
-const stringifySafe = require('../Utilities/stringifySafe').default;
-const warnOnce = require('../Utilities/warnOnce');
+const stringifySafe = require('stringifySafe');
 
 export type SpyData = {
   type: number,
   module: ?string,
   method: string | number,
-  args: mixed[],
-  ...
+  args: any[],
 };
 
 const TO_JS = 0;
@@ -40,26 +38,26 @@ const TRACE_TAG_REACT_APPS = 1 << 17;
 const DEBUG_INFO_LIMIT = 32;
 
 class MessageQueue {
-  _lazyCallableModules: {[key: string]: (void) => {...}, ...};
-  _queue: [number[], number[], mixed[], number];
-  _successCallbacks: Map<number, ?(...mixed[]) => void>;
-  _failureCallbacks: Map<number, ?(...mixed[]) => void>;
+  _lazyCallableModules: {[key: string]: (void) => Object};
+  _queue: [number[], number[], any[], number];
+  _successCallbacks: {[key: number]: ?Function};
+  _failureCallbacks: {[key: number]: ?Function};
   _callID: number;
   _lastFlush: number;
   _eventLoopStartTime: number;
   _immediatesCallback: ?() => void;
 
-  _debugInfo: {[number]: [number, number], ...};
-  _remoteModuleTable: {[number]: string, ...};
-  _remoteMethodTable: {[number]: $ReadOnlyArray<string>, ...};
+  _debugInfo: {[number]: [number, number]};
+  _remoteModuleTable: {[number]: string};
+  _remoteMethodTable: {[number]: string[]};
 
   __spy: ?(data: SpyData) => void;
 
   constructor() {
     this._lazyCallableModules = {};
     this._queue = [[], [], [], 0];
-    this._successCallbacks = new Map();
-    this._failureCallbacks = new Map();
+    this._successCallbacks = {};
+    this._failureCallbacks = {};
     this._callID = 0;
     this._lastFlush = 0;
     this._eventLoopStartTime = Date.now();
@@ -71,15 +69,14 @@ class MessageQueue {
       this._remoteMethodTable = {};
     }
 
-    // $FlowFixMe[cannot-write]
-    this.callFunctionReturnFlushedQueue = this.callFunctionReturnFlushedQueue.bind(
+    (this: any).callFunctionReturnFlushedQueue = this.callFunctionReturnFlushedQueue.bind(
       this,
     );
-    // $FlowFixMe[cannot-write]
-    this.flushedQueue = this.flushedQueue.bind(this);
-
-    // $FlowFixMe[cannot-write]
-    this.invokeCallbackAndReturnFlushedQueue = this.invokeCallbackAndReturnFlushedQueue.bind(
+    (this: any).callFunctionReturnResultAndFlushedQueue = this.callFunctionReturnResultAndFlushedQueue.bind(
+      this,
+    );
+    (this: any).flushedQueue = this.flushedQueue.bind(this);
+    (this: any).invokeCallbackAndReturnFlushedQueue = this.invokeCallbackAndReturnFlushedQueue.bind(
       this,
     );
   }
@@ -93,7 +90,7 @@ class MessageQueue {
       MessageQueue.prototype.__spy = info => {
         console.log(
           `${info.type === TO_JS ? 'N->JS' : 'JS->N'} : ` +
-            `${info.module != null ? info.module + '.' : ''}${info.method}` +
+            `${info.module ? info.module + '.' : ''}${info.method}` +
             `(${JSON.stringify(info.args)})`,
         );
       };
@@ -104,11 +101,7 @@ class MessageQueue {
     }
   }
 
-  callFunctionReturnFlushedQueue(
-    module: string,
-    method: string,
-    args: mixed[],
-  ): null | [Array<number>, Array<number>, Array<mixed>, number] {
+  callFunctionReturnFlushedQueue(module: string, method: string, args: any[]) {
     this.__guard(() => {
       this.__callFunction(module, method, args);
     });
@@ -116,10 +109,20 @@ class MessageQueue {
     return this.flushedQueue();
   }
 
-  invokeCallbackAndReturnFlushedQueue(
-    cbID: number,
-    args: mixed[],
-  ): null | [Array<number>, Array<number>, Array<mixed>, number] {
+  callFunctionReturnResultAndFlushedQueue(
+    module: string,
+    method: string,
+    args: any[],
+  ) {
+    let result;
+    this.__guard(() => {
+      result = this.__callFunction(module, method, args);
+    });
+
+    return [result, this.flushedQueue()];
+  }
+
+  invokeCallbackAndReturnFlushedQueue(cbID: number, args: any[]) {
     this.__guard(() => {
       this.__invokeCallback(cbID, args);
     });
@@ -127,7 +130,7 @@ class MessageQueue {
     return this.flushedQueue();
   }
 
-  flushedQueue(): null | [Array<number>, Array<number>, Array<mixed>, number] {
+  flushedQueue() {
     this.__guard(() => {
       this.__callImmediates();
     });
@@ -137,17 +140,17 @@ class MessageQueue {
     return queue[0].length ? queue : null;
   }
 
-  getEventLoopRunningTime(): number {
+  getEventLoopRunningTime() {
     return Date.now() - this._eventLoopStartTime;
   }
 
-  registerCallableModule(name: string, module: {...}) {
+  registerCallableModule(name: string, module: Object) {
     this._lazyCallableModules[name] = () => module;
   }
 
-  registerLazyCallableModule(name: string, factory: void => {...}) {
-    let module: {...};
-    let getValue: ?(void) => {...} = factory;
+  registerLazyCallableModule(name: string, factory: void => Object) {
+    let module: Object;
+    let getValue: ?(void) => Object = factory;
     this._lazyCallableModules[name] = () => {
       if (getValue) {
         module = getValue();
@@ -157,60 +160,23 @@ class MessageQueue {
     };
   }
 
-  getCallableModule(name: string): {...} | null {
+  getCallableModule(name: string) {
     const getValue = this._lazyCallableModules[name];
     return getValue ? getValue() : null;
   }
 
-  callNativeSyncHook(
+  enqueueNativeCall(
     moduleID: number,
     methodID: number,
-    params: mixed[],
-    onFail: ?(...mixed[]) => void,
-    onSucc: ?(...mixed[]) => void,
-  ): mixed {
-    if (__DEV__) {
-      invariant(
-        global.nativeCallSyncHook,
-        'Calling synchronous methods on native ' +
-          'modules is not supported in Chrome.\n\n Consider providing alternative ' +
-          'methods to expose this method in debug mode, e.g. by exposing constants ' +
-          'ahead-of-time.',
-      );
-    }
-    this.processCallbacks(moduleID, methodID, params, onFail, onSucc);
-    return global.nativeCallSyncHook(moduleID, methodID, params);
-  }
-
-  processCallbacks(
-    moduleID: number,
-    methodID: number,
-    params: mixed[],
-    onFail: ?(...mixed[]) => void,
-    onSucc: ?(...mixed[]) => void,
-  ): void {
+    params: any[],
+    onFail: ?Function,
+    onSucc: ?Function,
+  ) {
     if (onFail || onSucc) {
       if (__DEV__) {
         this._debugInfo[this._callID] = [moduleID, methodID];
         if (this._callID > DEBUG_INFO_LIMIT) {
           delete this._debugInfo[this._callID - DEBUG_INFO_LIMIT];
-        }
-        if (this._successCallbacks.size > 500) {
-          const info = {};
-          this._successCallbacks.forEach((_, callID) => {
-            const debug = this._debugInfo[callID];
-            const module = debug && this._remoteModuleTable[debug[0]];
-            const method = debug && this._remoteMethodTable[debug[0]][debug[1]];
-            info[callID] = {module, method};
-          });
-          warnOnce(
-            'excessive-number-of-pending-callbacks',
-            `Please report: Excessive number of pending callbacks: ${
-              this._successCallbacks.size
-            }. Some pending callbacks that might have leaked by never being called from native code: ${stringifySafe(
-              info,
-            )}`,
-          );
         }
       }
       // Encode callIDs into pairs of callback identifiers by shifting left and using the rightmost bit
@@ -219,9 +185,10 @@ class MessageQueue {
       onFail && params.push(this._callID << 1);
       // eslint-disable-next-line no-bitwise
       onSucc && params.push((this._callID << 1) | 1);
-      this._successCallbacks.set(this._callID, onSucc);
-      this._failureCallbacks.set(this._callID, onFail);
+      this._successCallbacks[this._callID] = onSucc;
+      this._failureCallbacks[this._callID] = onFail;
     }
+
     if (__DEV__) {
       global.nativeTraceBeginAsyncFlow &&
         global.nativeTraceBeginAsyncFlow(
@@ -231,16 +198,6 @@ class MessageQueue {
         );
     }
     this._callID++;
-  }
-
-  enqueueNativeCall(
-    moduleID: number,
-    methodID: number,
-    params: mixed[],
-    onFail: ?(...mixed[]) => void,
-    onSucc: ?(...mixed[]) => void,
-  ) {
-    this.processCallbacks(moduleID, methodID, params, onFail, onSucc);
 
     this._queue[MODULE_IDS].push(moduleID);
     this._queue[METHOD_IDS].push(methodID);
@@ -251,34 +208,30 @@ class MessageQueue {
       // function it is permitted here, and special-cased in the
       // conversion.
       const isValidArgument = val => {
-        switch (typeof val) {
-          case 'undefined':
-          case 'boolean':
-          case 'string':
-            return true;
-          case 'number':
-            return isFinite(val);
-          case 'object':
-            if (val == null) {
-              return true;
-            }
-
-            if (Array.isArray(val)) {
-              return val.every(isValidArgument);
-            }
-
-            for (const k in val) {
-              if (typeof val[k] !== 'function' && !isValidArgument(val[k])) {
-                return false;
-              }
-            }
-
-            return true;
-          case 'function':
-            return false;
-          default:
-            return false;
+        const t = typeof val;
+        if (
+          t === 'undefined' ||
+          t === 'null' ||
+          t === 'boolean' ||
+          t === 'string'
+        ) {
+          return true;
         }
+        if (t === 'number') {
+          return isFinite(val);
+        }
+        if (t === 'function' || t !== 'object') {
+          return false;
+        }
+        if (Array.isArray(val)) {
+          return val.every(isValidArgument);
+        }
+        for (const k in val) {
+          if (typeof val[k] !== 'function' && !isValidArgument(val[k])) {
+            return false;
+          }
+        }
+        return true;
       };
 
       // Replacement allows normally non-JSON-convertible values to be
@@ -303,7 +256,7 @@ class MessageQueue {
       );
 
       // The params object should not be mutated after being queued
-      deepFreezeAndThrowOnMutationInDev(params);
+      deepFreezeAndThrowOnMutationInDev((params: any));
     }
     this._queue[PARAMS].push(params);
 
@@ -335,14 +288,10 @@ class MessageQueue {
     }
   }
 
-  createDebugLookup(
-    moduleID: number,
-    name: string,
-    methods: ?$ReadOnlyArray<string>,
-  ) {
+  createDebugLookup(moduleID: number, name: string, methods: string[]) {
     if (__DEV__) {
       this._remoteModuleTable[moduleID] = name;
-      this._remoteMethodTable[moduleID] = methods || [];
+      this._remoteMethodTable[moduleID] = methods;
     }
   }
 
@@ -374,7 +323,7 @@ class MessageQueue {
   // This makes stacktraces to be placed at MessageQueue rather than at where they were launched
   // The parameter DebuggerInternal.shouldPauseOnThrow is used to check before catching all exceptions and
   // can be configured by the VM or any Inspector
-  __shouldPauseOnThrow(): boolean {
+  __shouldPauseOnThrow() {
     return (
       // $FlowFixMe
       typeof DebuggerInternal !== 'undefined' &&
@@ -390,7 +339,7 @@ class MessageQueue {
     Systrace.endEvent();
   }
 
-  __callFunction(module: string, method: string, args: mixed[]): void {
+  __callFunction(module: string, method: string, args: any[]): any {
     this._lastFlush = Date.now();
     this._eventLoopStartTime = this._lastFlush;
     if (__DEV__ || this.__spy) {
@@ -404,18 +353,22 @@ class MessageQueue {
     const moduleMethods = this.getCallableModule(module);
     invariant(
       !!moduleMethods,
-      `Module ${module} is not a registered callable module (calling ${method}). A frequent cause of the error is that the application entry file path is incorrect. 
-      This can also happen when the JS bundle is corrupt or there is an early initialization error when loading React Native.`,
+      'Module %s is not a registered callable module (calling %s)',
+      module,
+      method,
     );
     invariant(
       !!moduleMethods[method],
-      `Method ${method} does not exist on module ${module}`,
+      'Method %s does not exist on module %s',
+      method,
+      module,
     );
-    moduleMethods[method].apply(moduleMethods, args);
+    const result = moduleMethods[method].apply(moduleMethods, args);
     Systrace.endEvent();
+    return result;
   }
 
-  __invokeCallback(cbID: number, args: mixed[]) {
+  __invokeCallback(cbID: number, args: any[]) {
     this._lastFlush = Date.now();
     this._eventLoopStartTime = this._lastFlush;
 
@@ -425,21 +378,22 @@ class MessageQueue {
     // eslint-disable-next-line no-bitwise
     const isSuccess = cbID & 1;
     const callback = isSuccess
-      ? this._successCallbacks.get(callID)
-      : this._failureCallbacks.get(callID);
+      ? this._successCallbacks[callID]
+      : this._failureCallbacks[callID];
 
     if (__DEV__) {
       const debug = this._debugInfo[callID];
       const module = debug && this._remoteModuleTable[debug[0]];
       const method = debug && this._remoteMethodTable[debug[0]][debug[1]];
-      invariant(
-        callback,
-        `No callback found with cbID ${cbID} and callID ${callID} for ` +
-          (method
-            ? ` ${module}.${method} - most likely the callback was already invoked`
-            : `module ${module || '<unknown>'}`) +
-          `. Args: '${stringifySafe(args)}'`,
-      );
+      if (!callback) {
+        let errorMessage = `Callback with id ${cbID}: ${module}.${method}() not found`;
+        if (method) {
+          errorMessage =
+            `The callback ${method}() exists in module ${module}, ` +
+            'but only one callback may be registered to a function in a native module.';
+        }
+        invariant(callback, errorMessage);
+      }
       const profileName = debug
         ? '<callback for ' + module + '.' + method + '>'
         : cbID;
@@ -455,8 +409,8 @@ class MessageQueue {
       return;
     }
 
-    this._successCallbacks.delete(callID);
-    this._failureCallbacks.delete(callID);
+    delete this._successCallbacks[callID];
+    delete this._failureCallbacks[callID];
     callback(...args);
 
     if (__DEV__) {

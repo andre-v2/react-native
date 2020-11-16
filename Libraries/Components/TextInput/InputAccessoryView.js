@@ -7,17 +7,16 @@
  * @flow
  * @format
  */
-
 'use strict';
 
-const Platform = require('../../Utilities/Platform');
-const React = require('react');
-const StyleSheet = require('../../StyleSheet/StyleSheet');
+const DeprecatedColorPropType = require('DeprecatedColorPropType');
+const Platform = require('Platform');
+const React = require('React');
+const StyleSheet = require('StyleSheet');
 
-import RCTInputAccessoryViewNativeComponent from './RCTInputAccessoryViewNativeComponent';
+const RCTInputAccessoryViewNativeComponent = require('RCTInputAccessoryViewNativeComponent');
 
-import type {ViewStyleProp} from '../../StyleSheet/StyleSheet';
-import type {ColorValue} from '../../StyleSheet/StyleSheet';
+import type {ViewStyleProp} from 'StyleSheet';
 
 /**
  * Note: iOS only
@@ -85,7 +84,7 @@ type Props = $ReadOnly<{|
    */
   nativeID?: ?string,
   style?: ?ViewStyleProp,
-  backgroundColor?: ?ColorValue,
+  backgroundColor?: ?DeprecatedColorPropType,
 |}>;
 
 class InputAccessoryView extends React.Component<Props> {

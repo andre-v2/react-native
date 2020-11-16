@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @format
- * @flow strict
+ * @flow strict-local
  */
 
 'use strict';
@@ -28,11 +28,8 @@ const SamplingProfiler = {
       error = e.toString();
     }
 
-    const NativeJSCSamplingProfiler = require('./NativeJSCSamplingProfiler')
-      .default;
-    if (NativeJSCSamplingProfiler) {
-      NativeJSCSamplingProfiler.operationComplete(token, result, error);
-    }
+    const {JSCSamplingProfiler} = require('NativeModules');
+    JSCSamplingProfiler.operationComplete(token, result, error);
   },
 };
 

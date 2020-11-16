@@ -10,19 +10,19 @@
 
 'use strict';
 
-const PerformanceLogger = require('../Utilities/GlobalPerformanceLogger');
-const React = require('react');
-const StyleSheet = require('../StyleSheet/StyleSheet');
-const Text = require('../Text/Text');
-const View = require('../Components/View/View');
+const PerformanceLogger = require('PerformanceLogger');
+const React = require('React');
+const StyleSheet = require('StyleSheet');
+const Text = require('Text');
+const View = require('View');
 
-class PerformanceOverlay extends React.Component<{...}> {
-  render(): React.Node {
+class PerformanceOverlay extends React.Component<{}> {
+  render() {
     const perfLogs = PerformanceLogger.getTimespans();
     const items = [];
 
     for (const key in perfLogs) {
-      if (perfLogs[key]?.totalTime) {
+      if (perfLogs[key].totalTime) {
         const unit = key === 'BundleSize' ? 'b' : 'ms';
         items.push(
           <View style={styles.row} key={key}>

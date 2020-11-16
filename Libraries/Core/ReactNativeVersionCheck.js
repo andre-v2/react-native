@@ -4,14 +4,13 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @flow strict
+ * @flow strict-local
  * @format
  */
-
 'use strict';
 
-import Platform from '../Utilities/Platform';
-const ReactNativeVersion = require('./ReactNativeVersion');
+const {PlatformConstants} = require('NativeModules');
+const ReactNativeVersion = require('ReactNativeVersion');
 
 /**
  * Checks that the version of this React Native JS is compatible with the native
@@ -23,7 +22,11 @@ const ReactNativeVersion = require('./ReactNativeVersion');
  * and rely on its existence as a separate module.
  */
 exports.checkVersions = function checkVersions(): void {
-  const nativeVersion = Platform.constants.reactNativeVersion;
+  if (!PlatformConstants) {
+    return;
+  }
+
+  const nativeVersion = PlatformConstants.reactNativeVersion;
   if (
     ReactNativeVersion.version.major !== nativeVersion.major ||
     ReactNativeVersion.version.minor !== nativeVersion.minor
@@ -43,7 +46,6 @@ exports.checkVersions = function checkVersions(): void {
 function _formatVersion(version): string {
   return (
     `${version.major}.${version.minor}.${version.patch}` +
-    // eslint-disable-next-line eqeqeq
-    (version.prerelease != undefined ? `-${version.prerelease}` : '')
+    (version.prerelease !== null ? `-${version.prerelease}` : '')
   );
 }

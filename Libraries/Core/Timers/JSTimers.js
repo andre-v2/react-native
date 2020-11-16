@@ -7,15 +7,27 @@
  * @format
  * @flow
  */
-
 'use strict';
 
-const BatchedBridge = require('../../BatchedBridge/BatchedBridge');
-const Systrace = require('../../Performance/Systrace');
+const Platform = require('Platform');
+const Systrace = require('Systrace');
 
 const invariant = require('invariant');
+const {Timing} = require('NativeModules');
+const BatchedBridge = require('BatchedBridge');
 
-import NativeTiming from './NativeTiming';
+import type {ExtendedError} from 'parseErrorStack';
+
+let _performanceNow = null;
+function performanceNow() {
+  if (!_performanceNow) {
+    /* $FlowFixMe(>=0.54.0 site=react_native_oss) This comment suppresses an
+     * error found when Flow v0.54 was deployed. To see the error delete this
+     * comment and run Flow. */
+    _performanceNow = require('fbjs/lib/performanceNow');
+  }
+  return _performanceNow();
+}
 
 /**
  * JS implementation of timer functions. Must be completely driven by an
@@ -35,13 +47,22 @@ export type JSTimerType =
 const FRAME_DURATION = 1000 / 60;
 const IDLE_CALLBACK_FRAME_DEADLINE = 1;
 
+const MAX_TIMER_DURATION_MS = 60 * 1000;
+const IS_ANDROID = Platform.OS === 'android';
+const ANDROID_LONG_TIMER_MESSAGE =
+  'Setting a timer for a long period of time, i.e. multiple minutes, is a ' +
+  'performance and correctness issue on Android as it keeps the timer ' +
+  'module awake, and timers can only be called when the app is in the foreground. ' +
+  'See https://github.com/facebook/react-native/issues/12981 for more info.';
+
 // Parallel arrays
 const callbacks: Array<?Function> = [];
 const types: Array<?JSTimerType> = [];
 const timerIDs: Array<?number> = [];
 let immediates: Array<number> = [];
 let requestIdleCallbacks: Array<number> = [];
-const requestIdleCallbackTimeouts: {[number]: number, ...} = {};
+const requestIdleCallbackTimeouts: {[number]: number} = {};
+const identifiers: Array<null | {methodName: string}> = [];
 
 let GUID = 1;
 let errors: ?Array<Error> = null;
@@ -63,6 +84,15 @@ function _allocateCallback(func: Function, type: JSTimerType): number {
   timerIDs[freeIndex] = id;
   callbacks[freeIndex] = func;
   types[freeIndex] = type;
+  if (__DEV__) {
+    const parseErrorStack = require('parseErrorStack');
+    const error: ExtendedError = new Error();
+    error.framesToPop = 1;
+    const stack = parseErrorStack(error);
+    if (stack) {
+      identifiers[freeIndex] = stack.shift();
+    }
+  }
   return id;
 }
 
@@ -72,12 +102,14 @@ function _allocateCallback(func: Function, type: JSTimerType): number {
  * recurring (setInterval).
  */
 function _callTimer(timerID: number, frameTime: number, didTimeout: ?boolean) {
-  if (timerID > GUID) {
-    console.warn(
-      'Tried to call timer with ID %s but no such timer exists.',
-      timerID,
-    );
-  }
+  /* $FlowFixMe(>=0.54.0 site=react_native_oss) This comment suppresses an
+   * error found when Flow v0.54 was deployed. To see the error delete this
+   * comment and run Flow. */
+  require('fbjs/lib/warning')(
+    timerID <= GUID,
+    'Tried to call timer with ID %s but no such timer exists.',
+    timerID,
+  );
 
   // timerIndex of -1 means that no timer with that ID exists. There are
   // two situations when this happens, when a garbage timer ID was given
@@ -97,11 +129,17 @@ function _callTimer(timerID: number, frameTime: number, didTimeout: ?boolean) {
   }
 
   if (__DEV__) {
-    Systrace.beginEvent(type + ' [invoke]');
+    const identifier = identifiers[timerIndex] || {};
+    Systrace.beginEvent('Systrace.callTimer: ' + identifier.methodName);
   }
 
   // Clear the metadata
-  if (type !== 'setInterval') {
+  if (
+    type === 'setTimeout' ||
+    type === 'setImmediate' ||
+    type === 'requestAnimationFrame' ||
+    type === 'requestIdleCallback'
+  ) {
     _clearIndex(timerIndex);
   }
 
@@ -113,17 +151,14 @@ function _callTimer(timerID: number, frameTime: number, didTimeout: ?boolean) {
     ) {
       callback();
     } else if (type === 'requestAnimationFrame') {
-      callback(global.performance.now());
+      callback(performanceNow());
     } else if (type === 'requestIdleCallback') {
       callback({
         timeRemaining: function() {
           // TODO: Optimisation: allow running for longer than one frame if
           // there are no pending JS calls on the bridge from native. This
           // would require a way to check the bridge queue synchronously.
-          return Math.max(
-            0,
-            FRAME_DURATION - (global.performance.now() - frameTime),
-          );
+          return Math.max(0, FRAME_DURATION - (performanceNow() - frameTime));
         },
         didTimeout: !!didTimeout,
       });
@@ -149,23 +184,21 @@ function _callTimer(timerID: number, frameTime: number, didTimeout: ?boolean) {
  * more immediates are queued up (can be used as a condition a while loop).
  */
 function _callImmediatesPass() {
-  if (immediates.length === 0) {
-    return false;
-  }
-
   if (__DEV__) {
     Systrace.beginEvent('callImmediatesPass()');
   }
 
   // The main reason to extract a single pass is so that we can track
   // in the system trace
-  const passImmediates = immediates;
-  immediates = [];
+  if (immediates.length > 0) {
+    const passImmediates = immediates.slice();
+    immediates = [];
 
-  // Use for loop rather than forEach as per @vjeux's advice
-  // https://github.com/facebook/react-native/commit/c8fd9f7588ad02d2293cac7224715f4af7b0f352#commitcomment-14570051
-  for (let i = 0; i < passImmediates.length; ++i) {
-    _callTimer(passImmediates[i], 0);
+    // Use for loop rather than forEach as per @vjeux's advice
+    // https://github.com/facebook/react-native/commit/c8fd9f7588ad02d2293cac7224715f4af7b0f352#commitcomment-14570051
+    for (let i = 0; i < passImmediates.length; ++i) {
+      _callTimer(passImmediates[i], 0);
+    }
   }
 
   if (__DEV__) {
@@ -178,6 +211,7 @@ function _clearIndex(i: number) {
   timerIDs[i] = null;
   callbacks[i] = null;
   types[i] = null;
+  identifiers[i] = null;
 }
 
 function _freeCallback(timerID: number) {
@@ -190,10 +224,10 @@ function _freeCallback(timerID: number) {
   const index = timerIDs.indexOf(timerID);
   // See corresponding comment in `callTimers` for reasoning behind this
   if (index !== -1) {
-    const type = types[index];
     _clearIndex(index);
+    const type = types[index];
     if (type !== 'setImmediate' && type !== 'requestIdleCallback') {
-      deleteTimer(timerID);
+      Timing.deleteTimer(timerID);
     }
   }
 }
@@ -209,11 +243,20 @@ const JSTimers = {
    * @param {number} duration Number of milliseconds.
    */
   setTimeout: function(func: Function, duration: number, ...args: any): number {
+    if (__DEV__ && IS_ANDROID && duration > MAX_TIMER_DURATION_MS) {
+      console.warn(
+        ANDROID_LONG_TIMER_MESSAGE +
+          '\n' +
+          '(Saw setTimeout with duration ' +
+          duration +
+          'ms)',
+      );
+    }
     const id = _allocateCallback(
       () => func.apply(undefined, args),
       'setTimeout',
     );
-    createTimer(id, duration || 0, Date.now(), /* recurring */ false);
+    Timing.createTimer(id, duration || 0, Date.now(), /* recurring */ false);
     return id;
   },
 
@@ -226,11 +269,20 @@ const JSTimers = {
     duration: number,
     ...args: any
   ): number {
+    if (__DEV__ && IS_ANDROID && duration > MAX_TIMER_DURATION_MS) {
+      console.warn(
+        ANDROID_LONG_TIMER_MESSAGE +
+          '\n' +
+          '(Saw setInterval with duration ' +
+          duration +
+          'ms)',
+      );
+    }
     const id = _allocateCallback(
       () => func.apply(undefined, args),
       'setInterval',
     );
-    createTimer(id, duration || 0, Date.now(), /* recurring */ true);
+    Timing.createTimer(id, duration || 0, Date.now(), /* recurring */ true);
     return id;
   },
 
@@ -238,6 +290,9 @@ const JSTimers = {
    * @param {function} func Callback to be invoked before the end of the
    * current JavaScript execution loop.
    */
+  /* $FlowFixMe(>=0.79.1 site=react_native_fb) This comment suppresses an
+   * error found when Flow v0.79 was deployed. To see the error delete this
+   * comment and run Flow. */
   setImmediate: function(func: Function, ...args: any) {
     const id = _allocateCallback(
       () => func.apply(undefined, args),
@@ -250,9 +305,12 @@ const JSTimers = {
   /**
    * @param {function} func Callback to be invoked every frame.
    */
+  /* $FlowFixMe(>=0.79.1 site=react_native_fb) This comment suppresses an
+   * error found when Flow v0.79 was deployed. To see the error delete this
+   * comment and run Flow. */
   requestAnimationFrame: function(func: Function) {
     const id = _allocateCallback(func, 'requestAnimationFrame');
-    createTimer(id, 1, Date.now(), /* recurring */ false);
+    Timing.createTimer(id, 1, Date.now(), /* recurring */ false);
     return id;
   },
 
@@ -261,9 +319,12 @@ const JSTimers = {
    * with time remaining in frame.
    * @param {?object} options
    */
+  /* $FlowFixMe(>=0.79.1 site=react_native_fb) This comment suppresses an
+   * error found when Flow v0.79 was deployed. To see the error delete this
+   * comment and run Flow. */
   requestIdleCallback: function(func: Function, options: ?Object) {
     if (requestIdleCallbacks.length === 0) {
-      setSendIdleEvents(true);
+      Timing.setSendIdleEvents(true);
     }
 
     const timeout = options && options.timeout;
@@ -287,11 +348,11 @@ const JSTimers = {
         const index = requestIdleCallbacks.indexOf(id);
         if (index > -1) {
           requestIdleCallbacks.splice(index, 1);
-          _callTimer(id, global.performance.now(), true);
+          _callTimer(id, performanceNow(), true);
         }
         delete requestIdleCallbackTimeouts[id];
         if (requestIdleCallbacks.length === 0) {
-          setSendIdleEvents(false);
+          Timing.setSendIdleEvents(false);
         }
       }, timeout);
       requestIdleCallbackTimeouts[id] = timeoutId;
@@ -313,7 +374,7 @@ const JSTimers = {
     }
 
     if (requestIdleCallbacks.length === 0) {
-      setSendIdleEvents(false);
+      Timing.setSendIdleEvents(false);
     }
   },
 
@@ -347,7 +408,8 @@ const JSTimers = {
       'Cannot call `callTimers` with an empty list of IDs.',
     );
 
-    errors = (null: ?Array<Error>);
+    // $FlowFixMe: optionals do not allow assignment from null
+    errors = null;
     for (let i = 0; i < timersToCall.length; i++) {
       _callTimer(timersToCall[i], 0);
     }
@@ -372,15 +434,16 @@ const JSTimers = {
 
   callIdleCallbacks: function(frameTime: number) {
     if (
-      FRAME_DURATION - (global.performance.now() - frameTime) <
+      FRAME_DURATION - (performanceNow() - frameTime) <
       IDLE_CALLBACK_FRAME_DEADLINE
     ) {
       return;
     }
 
-    errors = (null: ?Array<Error>);
+    // $FlowFixMe: optionals do not allow assignment from null
+    errors = null;
     if (requestIdleCallbacks.length > 0) {
-      const passIdleCallbacks = requestIdleCallbacks;
+      const passIdleCallbacks = requestIdleCallbacks.slice();
       requestIdleCallbacks = [];
 
       for (let i = 0; i < passIdleCallbacks.length; ++i) {
@@ -389,7 +452,7 @@ const JSTimers = {
     }
 
     if (requestIdleCallbacks.length === 0) {
-      setSendIdleEvents(false);
+      Timing.setSendIdleEvents(false);
     }
 
     if (errors) {
@@ -406,7 +469,7 @@ const JSTimers = {
    * before we hand control back to native.
    */
   callImmediates() {
-    errors = (null: ?Array<Error>);
+    errors = null;
     while (_callImmediatesPass()) {}
     if (errors) {
       errors.forEach(error =>
@@ -429,44 +492,8 @@ const JSTimers = {
   },
 };
 
-function createTimer(
-  callbackID: number,
-  duration: number,
-  jsSchedulingTime: number,
-  repeats: boolean,
-): void {
-  invariant(NativeTiming, 'NativeTiming is available');
-  NativeTiming.createTimer(callbackID, duration, jsSchedulingTime, repeats);
-}
-
-function deleteTimer(timerID: number): void {
-  invariant(NativeTiming, 'NativeTiming is available');
-  NativeTiming.deleteTimer(timerID);
-}
-
-function setSendIdleEvents(sendIdleEvents: boolean): void {
-  invariant(NativeTiming, 'NativeTiming is available');
-  NativeTiming.setSendIdleEvents(sendIdleEvents);
-}
-
-let ExportedJSTimers: {|
-  callIdleCallbacks: (frameTime: number) => any | void,
-  callImmediates: () => void,
-  callTimers: (timersToCall: Array<number>) => any | void,
-  cancelAnimationFrame: (timerID: number) => void,
-  cancelIdleCallback: (timerID: number) => void,
-  clearImmediate: (timerID: number) => void,
-  clearInterval: (timerID: number) => void,
-  clearTimeout: (timerID: number) => void,
-  emitTimeDriftWarning: (warningMessage: string) => any | void,
-  requestAnimationFrame: (func: any) => any | number,
-  requestIdleCallback: (func: any, options: ?any) => any | number,
-  setImmediate: (func: any, ...args: any) => number,
-  setInterval: (func: any, duration: number, ...args: any) => number,
-  setTimeout: (func: any, duration: number, ...args: any) => number,
-|};
-
-if (!NativeTiming) {
+let ExportedJSTimers;
+if (!Timing) {
   console.warn("Timing native module is not available, can't set timers.");
   // $FlowFixMe: we can assume timers are generally available
   ExportedJSTimers = ({
@@ -477,6 +504,8 @@ if (!NativeTiming) {
   ExportedJSTimers = JSTimers;
 }
 
-BatchedBridge.setImmediatesCallback(JSTimers.callImmediates);
+BatchedBridge.setImmediatesCallback(
+  ExportedJSTimers.callImmediates.bind(ExportedJSTimers),
+);
 
 module.exports = ExportedJSTimers;

@@ -1,4 +1,4 @@
-/*
+/**
  * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * This source code is licensed under the MIT license found in the
@@ -7,23 +7,15 @@
 
 #import "RCTSwitchComponentView.h"
 
-#import <React/RCTConversions.h>
-
-#import <react/renderer/components/rncore/ComponentDescriptors.h>
-#import <react/renderer/components/rncore/EventEmitters.h>
-#import <react/renderer/components/rncore/Props.h>
-#import <react/renderer/components/rncore/RCTComponentViewHelpers.h>
-
-#import "FBRCTFabricComponentsPlugins.h"
+#import <react/components/rncore/EventEmitters.h>
+#import <react/components/rncore/Props.h>
+#import <react/components/rncore/ShadowNodes.h>
 
 using namespace facebook::react;
 
-@interface RCTSwitchComponentView () <RCTSwitchViewProtocol>
-@end
-
 @implementation RCTSwitchComponentView {
   UISwitch *_switchView;
-  BOOL _isInitialValueSet;
+  BOOL _wasOn;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame
@@ -34,7 +26,11 @@ using namespace facebook::react;
 
     _switchView = [[UISwitch alloc] initWithFrame:self.bounds];
 
-    [_switchView addTarget:self action:@selector(onChange:) forControlEvents:UIControlEventValueChanged];
+    [_switchView addTarget:self
+                    action:@selector(onChange:)
+          forControlEvents:UIControlEventValueChanged];
+
+    _switchView.on = defaultProps->value;
 
     self.contentView = _switchView;
   }
@@ -44,27 +40,22 @@ using namespace facebook::react;
 
 #pragma mark - RCTComponentViewProtocol
 
-- (void)prepareForRecycle
++ (ComponentHandle)componentHandle
 {
-  [super prepareForRecycle];
-  _isInitialValueSet = NO;
+  return SwitchShadowNode::Handle();
 }
 
-+ (ComponentDescriptorProvider)componentDescriptorProvider
+- (void)updateProps:(SharedProps)props oldProps:(SharedProps)oldProps
 {
-  return concreteComponentDescriptorProvider<SwitchComponentDescriptor>();
-}
-
-- (void)updateProps:(Props::Shared const &)props oldProps:(Props::Shared const &)oldProps
-{
-  const auto &oldSwitchProps = *std::static_pointer_cast<const SwitchProps>(_props);
+  const auto &oldSwitchProps = *std::static_pointer_cast<const SwitchProps>(oldProps ?: _props);
   const auto &newSwitchProps = *std::static_pointer_cast<const SwitchProps>(props);
+
+  [super updateProps:props oldProps:oldProps];
 
   // `value`
   if (oldSwitchProps.value != newSwitchProps.value) {
-    BOOL shouldAnimate = _isInitialValueSet == YES;
-    [_switchView setOn:newSwitchProps.value animated:shouldAnimate];
-    _isInitialValueSet = YES;
+    _switchView.on = newSwitchProps.value;
+    _wasOn = newSwitchProps.value;
   }
 
   // `disabled`
@@ -74,48 +65,28 @@ using namespace facebook::react;
 
   // `tintColor`
   if (oldSwitchProps.tintColor != newSwitchProps.tintColor) {
-    _switchView.tintColor = RCTUIColorFromSharedColor(newSwitchProps.tintColor);
+    _switchView.tintColor = [UIColor colorWithCGColor:newSwitchProps.tintColor.get()];
   }
 
   // `onTintColor
   if (oldSwitchProps.onTintColor != newSwitchProps.onTintColor) {
-    _switchView.onTintColor = RCTUIColorFromSharedColor(newSwitchProps.onTintColor);
+    _switchView.onTintColor = [UIColor colorWithCGColor:newSwitchProps.onTintColor.get()];
   }
 
   // `thumbTintColor`
   if (oldSwitchProps.thumbTintColor != newSwitchProps.thumbTintColor) {
-    _switchView.thumbTintColor = RCTUIColorFromSharedColor(newSwitchProps.thumbTintColor);
+    _switchView.thumbTintColor = [UIColor colorWithCGColor:newSwitchProps.thumbTintColor.get()];
   }
-
-  [super updateProps:props oldProps:oldProps];
 }
 
 - (void)onChange:(UISwitch *)sender
 {
-  const auto &props = *std::static_pointer_cast<const SwitchProps>(_props);
-  if (props.value == sender.on) {
+  if (_wasOn == sender.on) {
     return;
   }
+  _wasOn = sender.on;
 
-  std::dynamic_pointer_cast<const SwitchEventEmitter>(_eventEmitter)
-      ->onChange(SwitchEventEmitter::OnChange{.value = static_cast<bool>(sender.on)});
-}
-
-#pragma mark - Native Commands
-
-- (void)handleCommand:(const NSString *)commandName args:(const NSArray *)args
-{
-  RCTSwitchHandleCommand(self, commandName, args);
-}
-
-- (void)setValue:(BOOL)value
-{
-  [_switchView setOn:value animated:YES];
+  std::dynamic_pointer_cast<const SwitchEventEmitter>(_eventEmitter)->onChange(SwitchOnChangeStruct{.value=static_cast<bool>(sender.on)});
 }
 
 @end
-
-Class<RCTComponentViewProtocol> RCTSwitchCls(void)
-{
-  return RCTSwitchComponentView.class;
-}

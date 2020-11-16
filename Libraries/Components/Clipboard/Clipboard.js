@@ -5,12 +5,12 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @format
- * @flow strict
+ * @flow strict-local
  */
 
 'use strict';
 
-import NativeClipboard from './NativeClipboard';
+const Clipboard = require('NativeModules').Clipboard;
 
 /**
  * `Clipboard` gives you an interface for setting and getting content from Clipboard on both iOS and Android
@@ -25,7 +25,7 @@ module.exports = {
    * ```
    */
   getString(): Promise<string> {
-    return NativeClipboard.getString();
+    return Clipboard.getString();
   },
   /**
    * Set content of string type. You can use following code to set clipboard content
@@ -37,6 +37,6 @@ module.exports = {
    * @param the content to be stored in the clipboard.
    */
   setString(content: string) {
-    NativeClipboard.setString(content);
+    Clipboard.setString(content);
   },
 };

@@ -1,4 +1,4 @@
-/*
+/**
  * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * This source code is licensed under the MIT license found in the
@@ -7,9 +7,8 @@
 
 #import "RCTRootComponentView.h"
 
-#import <react/renderer/components/root/RootComponentDescriptor.h>
-#import <react/renderer/components/root/RootProps.h>
-#import "RCTConversions.h"
+#import <react/components/root/RootShadowNode.h>
+#import <react/components/root/RootProps.h>
 
 using namespace facebook::react;
 
@@ -25,11 +24,9 @@ using namespace facebook::react;
   return self;
 }
 
-#pragma mark - RCTComponentViewProtocol
-
-+ (ComponentDescriptorProvider)componentDescriptorProvider
++ (ComponentHandle)componentHandle
 {
-  return concreteComponentDescriptorProvider<RootComponentDescriptor>();
+  return RootShadowNode::Handle();
 }
 
 @end

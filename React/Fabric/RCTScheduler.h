@@ -1,4 +1,4 @@
-/*
+/**
  * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * This source code is licensed under the MIT license found in the
@@ -8,13 +8,10 @@
 #import <UIKit/UIKit.h>
 #import <memory>
 
-#import <react/renderer/componentregistry/ComponentDescriptorFactory.h>
-#import <react/renderer/core/ComponentDescriptor.h>
-#import <react/renderer/core/LayoutConstraints.h>
-#import <react/renderer/core/LayoutContext.h>
-#import <react/renderer/mounting/MountingCoordinator.h>
-#import <react/renderer/scheduler/SchedulerToolbox.h>
-#import <react/utils/ContextContainer.h>
+#import <React/RCTPrimitives.h>
+#import <react/core/LayoutConstraints.h>
+#import <react/core/LayoutContext.h>
+#import <react/mounting/ShadowViewMutation.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -25,11 +22,10 @@ NS_ASSUME_NONNULL_BEGIN
  */
 @protocol RCTSchedulerDelegate
 
-- (void)schedulerDidFinishTransaction:(facebook::react::MountingCoordinator::Shared const &)mountingCoordinator;
+- (void)schedulerDidFinishTransaction:(facebook::react::ShadowViewMutationList)mutations
+                              rootTag:(ReactTag)rootTag;
 
-- (void)schedulerDidDispatchCommand:(facebook::react::ShadowView const &)shadowView
-                        commandName:(std::string const &)commandName
-                               args:(folly::dynamic const)args;
+- (void)schedulerOptimisticallyCreateComponentViewWithComponentHandle:(facebook::react::ComponentHandle)componentHandle;
 
 @end
 
@@ -40,11 +36,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (atomic, weak, nullable) id<RCTSchedulerDelegate> delegate;
 
-- (instancetype)initWithToolbox:(facebook::react::SchedulerToolbox)toolbox;
+- (instancetype)initWithContextContainer:(std::shared_ptr<void>)contextContatiner;
 
 - (void)startSurfaceWithSurfaceId:(facebook::react::SurfaceId)surfaceId
                        moduleName:(NSString *)moduleName
-                     initialProps:(NSDictionary *)initialProps
+                     initailProps:(NSDictionary *)initialProps
                 layoutConstraints:(facebook::react::LayoutConstraints)layoutConstraints
                     layoutContext:(facebook::react::LayoutContext)layoutContext;
 
@@ -57,17 +53,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)constraintSurfaceLayoutWithLayoutConstraints:(facebook::react::LayoutConstraints)layoutConstraints
                                        layoutContext:(facebook::react::LayoutContext)layoutContext
                                            surfaceId:(facebook::react::SurfaceId)surfaceId;
-
-- (facebook::react::ComponentDescriptor const *)findComponentDescriptorByHandle_DO_NOT_USE_THIS_IS_BROKEN:
-    (facebook::react::ComponentHandle)handle;
-
-- (facebook::react::MountingCoordinator::Shared)mountingCoordinatorWithSurfaceId:(facebook::react::SurfaceId)surfaceId;
-
-- (void)onAnimationStarted;
-
-- (void)onAllAnimationsComplete;
-
-- (void)animationTick;
 
 @end
 

@@ -10,73 +10,38 @@
 
 'use strict';
 
-import * as React from 'react';
+const requireNativeComponent = require('requireNativeComponent');
 
-import codegenNativeCommands from '../../Utilities/codegenNativeCommands';
-import requireNativeComponent from '../../ReactNative/requireNativeComponent';
-import registerGeneratedViewConfig from '../../Utilities/registerGeneratedViewConfig';
-import AndroidDialogPickerViewConfig from './AndroidDialogPickerViewConfig';
+import type {SyntheticEvent} from 'CoreEventTypes';
+import type {TextStyleProp} from 'StyleSheet';
+import type {NativeComponent} from 'ReactNative';
 
-import type {
-  DirectEventHandler,
-  Int32,
-  WithDefault,
-} from '../../Types/CodegenTypes';
-import type {HostComponent} from '../../Renderer/shims/ReactNativeTypes';
-import type {TextStyleProp} from '../../StyleSheet/StyleSheet';
-import type {ColorValue} from '../../StyleSheet/StyleSheet';
-import type {ProcessedColorValue} from '../../StyleSheet/processColor';
-import type {ViewProps} from '../../Components/View/ViewPropTypes';
+type PickerAndroidChangeEvent = SyntheticEvent<
+  $ReadOnly<{|
+    position: number,
+  |}>,
+>;
 
-type PickerItem = $ReadOnly<{|
+type Item = $ReadOnly<{|
   label: string,
-  color?: ?ProcessedColorValue,
-|}>;
-
-type PickerItemSelectEvent = $ReadOnly<{|
-  position: Int32,
+  value: ?(number | string),
+  color?: ?number,
 |}>;
 
 type NativeProps = $ReadOnly<{|
-  ...ViewProps,
+  enabled?: ?boolean,
+  items: $ReadOnlyArray<Item>,
+  mode?: ?('dialog' | 'dropdown'),
+  onSelect?: (event: PickerAndroidChangeEvent) => void,
+  selected: number,
+  prompt?: ?string,
+  testID?: string,
   style?: ?TextStyleProp,
-
-  // Props
-  color?: ?ColorValue,
-  backgroundColor?: ?ColorValue,
-  enabled?: WithDefault<boolean, true>,
-  items: $ReadOnlyArray<PickerItem>,
-  prompt?: WithDefault<string, ''>,
-  selected: Int32,
-
-  // Events
-  onSelect?: DirectEventHandler<PickerItemSelectEvent>,
+  accessibilityLabel?: ?string,
 |}>;
 
-type NativeType = HostComponent<NativeProps>;
+type DialogPickerNativeType = Class<NativeComponent<NativeProps>>;
 
-interface NativeCommands {
-  +setNativeSelectedPosition: (
-    viewRef: React.ElementRef<NativeType>,
-    index: number,
-  ) => void;
-}
-
-export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
-  supportedCommands: ['setNativeSelectedPosition'],
-});
-
-let AndroidDialogPickerNativeComponent;
-if (global.RN$Bridgeless) {
-  registerGeneratedViewConfig(
-    'AndroidDialogPicker',
-    AndroidDialogPickerViewConfig,
-  );
-  AndroidDialogPickerNativeComponent = 'AndroidDialogPicker';
-} else {
-  AndroidDialogPickerNativeComponent = requireNativeComponent<NativeProps>(
-    'AndroidDialogPicker',
-  );
-}
-
-export default ((AndroidDialogPickerNativeComponent: any): NativeType);
+module.exports = ((requireNativeComponent(
+  'AndroidDialogPicker',
+): any): DialogPickerNativeType);

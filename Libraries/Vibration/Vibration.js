@@ -5,24 +5,23 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @format
- * @flow strict
+ * @flow
  * @jsdoc
  */
 
 'use strict';
 
-import NativeVibration from './NativeVibration';
-const Platform = require('../Utilities/Platform');
+const RCTVibration = require('NativeModules').Vibration;
+const Platform = require('Platform');
 
 /**
  * Vibration API
  *
- * See https://reactnative.dev/docs/vibration.html
+ * See https://facebook.github.io/react-native/docs/vibration.html
  */
 
 let _vibrating: boolean = false;
 let _id: number = 0; // _id is necessary to prevent race condition.
-const _default_vibration_length = 400;
 
 function vibrateByPattern(pattern: Array<number>, repeat: boolean = false) {
   if (_vibrating) {
@@ -30,8 +29,7 @@ function vibrateByPattern(pattern: Array<number>, repeat: boolean = false) {
   }
   _vibrating = true;
   if (pattern[0] === 0) {
-    NativeVibration.vibrate(_default_vibration_length);
-    // $FlowFixMe[reassign-const]
+    RCTVibration.vibrate();
     pattern = pattern.slice(1);
   }
   if (pattern.length === 0) {
@@ -50,10 +48,9 @@ function vibrateScheduler(
   if (!_vibrating || id !== _id) {
     return;
   }
-  NativeVibration.vibrate(_default_vibration_length);
+  RCTVibration.vibrate();
   if (nextIndex >= pattern.length) {
     if (repeat) {
-      // $FlowFixMe[reassign-const]
       nextIndex = 0;
     } else {
       _vibrating = false;
@@ -70,17 +67,17 @@ const Vibration = {
   /**
    * Trigger a vibration with specified `pattern`.
    *
-   * See https://reactnative.dev/docs/vibration.html#vibrate
+   * See https://facebook.github.io/react-native/docs/vibration.html#vibrate
    */
   vibrate: function(
-    pattern: number | Array<number> = _default_vibration_length,
+    pattern: number | Array<number> = 400,
     repeat: boolean = false,
   ) {
     if (Platform.OS === 'android') {
       if (typeof pattern === 'number') {
-        NativeVibration.vibrate(pattern);
+        RCTVibration.vibrate(pattern);
       } else if (Array.isArray(pattern)) {
-        NativeVibration.vibrateByPattern(pattern, repeat ? 0 : -1);
+        RCTVibration.vibrateByPattern(pattern, repeat ? 0 : -1);
       } else {
         throw new Error('Vibration pattern should be a number or array');
       }
@@ -89,7 +86,7 @@ const Vibration = {
         return;
       }
       if (typeof pattern === 'number') {
-        NativeVibration.vibrate(pattern);
+        RCTVibration.vibrate();
       } else if (Array.isArray(pattern)) {
         vibrateByPattern(pattern, repeat);
       } else {
@@ -100,13 +97,13 @@ const Vibration = {
   /**
    * Stop vibration
    *
-   * See https://reactnative.dev/docs/vibration.html#cancel
+   * See https://facebook.github.io/react-native/docs/vibration.html#cancel
    */
   cancel: function() {
     if (Platform.OS === 'ios') {
       _vibrating = false;
     } else {
-      NativeVibration.cancel();
+      RCTVibration.cancel();
     }
   },
 };

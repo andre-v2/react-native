@@ -5,23 +5,21 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @format
- * @flow strict-local
+ * @flow
  */
 
 'use strict';
 
-import RCTDeviceEventEmitter from '../../EventEmitter/RCTDeviceEventEmitter';
-import UIManager from '../../ReactNative/UIManager';
-import NativeAccessibilityInfo from './NativeAccessibilityInfo';
+const NativeModules = require('NativeModules');
+const RCTDeviceEventEmitter = require('RCTDeviceEventEmitter');
+const UIManager = require('UIManager');
 
-const REDUCE_MOTION_EVENT = 'reduceMotionDidChange';
+const RCTAccessibilityInfo = NativeModules.AccessibilityInfo;
+
 const TOUCH_EXPLORATION_EVENT = 'touchExplorationDidChange';
 
-type ChangeEventName = $Keys<{
+type ChangeEventName = $Enum<{
   change: string,
-  reduceMotionChanged: string,
-  screenReaderChanged: string,
-  ...
 }>;
 
 const _subscriptions = new Map();
@@ -33,125 +31,55 @@ const _subscriptions = new Map();
  * well as to register to be notified when the state of the screen reader
  * changes.
  *
- * See https://reactnative.dev/docs/accessibilityinfo.html
+ * See http://facebook.github.io/react-native/docs/accessibilityinfo.html
  */
 
 const AccessibilityInfo = {
-  /**
-   * iOS only
-   */
-  isBoldTextEnabled: function(): Promise<boolean> {
-    return Promise.resolve(false);
-  },
-
-  /**
-   * iOS only
-   */
-  isGrayscaleEnabled: function(): Promise<boolean> {
-    return Promise.resolve(false);
-  },
-
-  /**
-   * iOS only
-   */
-  isInvertColorsEnabled: function(): Promise<boolean> {
-    return Promise.resolve(false);
-  },
-
-  isReduceMotionEnabled: function(): Promise<boolean> {
+  /* $FlowFixMe(>=0.78.0 site=react_native_android_fb) This issue was found
+   * when making Flow check .android.js files. */
+  fetch: function(): Promise {
     return new Promise((resolve, reject) => {
-      if (NativeAccessibilityInfo) {
-        NativeAccessibilityInfo.isReduceMotionEnabled(resolve);
-      } else {
-        reject(false);
-      }
+      RCTAccessibilityInfo.isTouchExplorationEnabled(function(resp) {
+        resolve(resp);
+      });
     });
   },
 
-  /**
-   * iOS only
-   */
-  isReduceTransparencyEnabled: function(): Promise<boolean> {
-    return Promise.resolve(false);
-  },
-
-  isScreenReaderEnabled: function(): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-      if (NativeAccessibilityInfo) {
-        NativeAccessibilityInfo.isTouchExplorationEnabled(resolve);
-      } else {
-        reject(false);
-      }
-    });
-  },
-
-  /**
-   * Deprecated
-   *
-   * Same as `isScreenReaderEnabled`
-   */
-  // $FlowFixMe[unsafe-getters-setters]
-  get fetch(): () => Promise<boolean> {
-    console.warn(
-      'AccessibilityInfo.fetch is deprecated, call AccessibilityInfo.isScreenReaderEnabled instead',
+  addEventListener: function(
+    eventName: ChangeEventName,
+    handler: Function,
+  ): void {
+    const listener = RCTDeviceEventEmitter.addListener(
+      TOUCH_EXPLORATION_EVENT,
+      enabled => {
+        handler(enabled);
+      },
     );
-    return this.isScreenReaderEnabled;
-  },
-
-  addEventListener: function<T>(eventName: ChangeEventName, handler: T): void {
-    let listener;
-
-    if (eventName === 'change' || eventName === 'screenReaderChanged') {
-      listener = RCTDeviceEventEmitter.addListener(
-        TOUCH_EXPLORATION_EVENT,
-        handler,
-      );
-    } else if (eventName === 'reduceMotionChanged') {
-      listener = RCTDeviceEventEmitter.addListener(
-        REDUCE_MOTION_EVENT,
-        handler,
-      );
-    }
-
-    // $FlowFixMe[escaped-generic]
     _subscriptions.set(handler, listener);
   },
 
-  removeEventListener: function<T>(
+  removeEventListener: function(
     eventName: ChangeEventName,
-    handler: T,
+    handler: Function,
   ): void {
-    // $FlowFixMe[escaped-generic]
     const listener = _subscriptions.get(handler);
     if (!listener) {
       return;
     }
     listener.remove();
-    // $FlowFixMe[escaped-generic]
     _subscriptions.delete(handler);
   },
 
   /**
    * Set accessibility focus to a react component.
    *
-   * See https://reactnative.dev/docs/accessibilityinfo.html#setaccessibilityfocus
+   * See http://facebook.github.io/react-native/docs/accessibilityinfo.html#setaccessibilityfocus
    */
   setAccessibilityFocus: function(reactTag: number): void {
     UIManager.sendAccessibilityEvent(
       reactTag,
-      UIManager.getConstants().AccessibilityEventTypes.typeViewFocused,
+      UIManager.AccessibilityEventTypes.typeViewFocused,
     );
-  },
-
-  /**
-   * Post a string to be announced by the screen reader.
-   *
-   * See https://reactnative.dev/docs/accessibilityinfo.html#announceforaccessibility
-   */
-  announceForAccessibility: function(announcement: string): void {
-    if (NativeAccessibilityInfo) {
-      NativeAccessibilityInfo.announceForAccessibility(announcement);
-    }
   },
 };
 
